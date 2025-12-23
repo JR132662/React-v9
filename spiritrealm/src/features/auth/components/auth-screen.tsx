@@ -2,7 +2,7 @@
 import { SignInFlow } from "../types"
 import { useState } from "react"
 import { SignInCard } from "./signin-card"
-import { SignUpCard } from "./signup-card copy"
+import { SignUpCard } from "./signup-card"
 
 export const AuthScreen = () => {
     const [state, setState] = useState<SignInFlow>("SignIn")
