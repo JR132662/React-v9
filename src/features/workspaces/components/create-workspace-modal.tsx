@@ -83,7 +83,7 @@ export const CreateWorkspaceModal = () => {
                                 autoFocus
                                 minLength={3}
                             />
-                            <div className="pointer-events-none absolute inset-0 rounded-md border border-purple-500/80 opacity-100 animate-pulse [animation-duration:1.6s]" />
+                            <div className="pointer-events-none absolute inset-0 rounded-md border border-purple-500/80 opacity-100 animate-pulse animation-duration-[1.6s]" />
                         </div>
 
                         {isError ? (

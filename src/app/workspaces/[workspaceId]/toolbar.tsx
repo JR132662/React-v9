@@ -53,7 +53,7 @@ const Toolbar = () => {
             <div className="min-w-70 max-160.5 grow-2 shrink">
                 <Button
                     size="sm"
-                    className="group relative bg-accent/25 hover:bg-white w-full justify-start h-7 px-2 border border-purple-500/50 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-purple-500/80 before:opacity-100 before:animate-pulse before:[animation-duration:1.6s]"
+                    className="group relative bg-accent/25 hover:bg-white w-full justify-start h-7 px-2 border border-purple-500/50 before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-purple-500/80 before:opacity-100 before:animate-pulse before:animation-duration-[1.6s]"
                 >
                     <Search className="size-4 text-sidebar-foreground mr-2 group-hover:text-black" />
                     <span className="text-sidebar-foreground text-xs group-hover:text-black">

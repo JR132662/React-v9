@@ -87,7 +87,7 @@ export const SignInCard = ({ setState}: SignInCardProps) => {
                     <button
                     type="submit"
                     disabled={pending}
-                    className="w-full relative bg-black text-white py-3 rounded-md hover:bg-black/90 transition-colors before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-purple-500/80 before:opacity-100 before:animate-pulse before:[animation-duration:1.6s]"
+                    className="w-full relative bg-black text-white py-3 rounded-md hover:bg-black/90 transition-colors before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:border before:border-purple-500/80 before:opacity-100 before:animate-pulse before:animation-duration-[1.6s]"
                     >
                     Sign In
                     </button>

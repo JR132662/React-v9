@@ -1,6 +1,7 @@
 "use client";
 
 import { CreateWorkspaceModal } from "@/features/workspaces/components/create-workspace-modal";
+import { CreateDmModal } from "@/features/direct-messages/components/create-dm-modal";
 import { useEffect, useState } from "react";
 
 export const Modals = () => {
@@ -15,6 +16,7 @@ export const Modals = () => {
     return (
         <>
         <CreateWorkspaceModal />
+        <CreateDmModal />
         </>
     )
 }

@@ -126,6 +126,25 @@ export const listByWorkspace = query({
   },
 });
 
+export const getByMemberId = query({
+  args: { workspaceId: v.id("workspaces"), memberId: v.id("members") },
+  handler: async (ctx, args) => {
+    // Avoid crashing the UI: if caller isn't a member yet, just return null
+    const myMember = await getMyMemberOrNull(ctx, args.workspaceId);
+    if (!myMember) return null;
+
+    const member = await ctx.db.get(args.memberId);
+    if (!member) return null;
+
+    if (member.workspaceId !== args.workspaceId) return null;
+
+    const user = await populateUser(ctx, member);
+    if (!user) return null;
+
+    return { member, user };
+  },
+});
+
 export const updateRole = mutation({
   args: {
     workspaceId: v.id("workspaces"),

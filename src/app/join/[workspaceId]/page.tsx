@@ -33,6 +33,13 @@ const JoinWorkspacePage = () => {
 
   const hasTriggeredRef = useRef(false);
 
+  // If auth flips back to signed-out (common right after logout), allow a future retry.
+  useEffect(() => {
+    if (!isAuthenticated) {
+      hasTriggeredRef.current = false;
+    }
+  }, [isAuthenticated]);
+
   useEffect(() => {
     if (!joinCode) return;
     if (isAuthLoading) return;
@@ -40,8 +47,16 @@ const JoinWorkspacePage = () => {
     if (hasTriggeredRef.current) return;
     hasTriggeredRef.current = true;
 
-    void joinWorkspace({ joinCode });
-  }, [isAuthenticated, isAuthLoading, joinWorkspace, joinCode, router]);
+    void (async () => {
+      try {
+        await joinWorkspace({ joinCode });
+      } catch {
+        // If a stale auth state triggered an unauthenticated join attempt,
+        // let the user sign in and retry without needing a hard refresh.
+        hasTriggeredRef.current = false;
+      }
+    })();
+  }, [isAuthenticated, isAuthLoading, joinWorkspace, joinCode]);
 
   useEffect(() => {
     if (!isSuccess || !data?._id) return;

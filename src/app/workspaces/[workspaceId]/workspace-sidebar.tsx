@@ -16,6 +16,13 @@ import { useGetWorkspaces } from "@/features/workspaces/api/use-get-workspaces";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useChannelId } from "@/hooks/use-channel-id";
+import { useCreateDmModal } from "@/features/direct-messages/store/use-create-dm-modal";
+import { useCurrentUser } from "@/features/auth/api/use-current-user";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { api } from "../../../../convex/_generated/api";
+import { useMutation } from "convex/react";
+import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 
 
 
@@ -36,7 +43,28 @@ export const WorkSpaceSidebar = () => {
 
   const { data: channels, isLoading: channelsLoading } = UseGetChannels({ workspaceId });
 
+    const removeChannel = useMutation(api.channels.remove);
+    const renameChannel = useMutation(api.channels.updateName);
+    const formatDisplayName = (rawName: string | null | undefined) => {
+        const name = String(rawName ?? "").trim();
+        if (!name) return "Unnamed";
+
+        return name
+            .split(/\s+/)
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+            .join(" ");
+    };
+
   const { data: members, isLoading: membersLoading } = useGetMembers({ workspaceId });
+
+    const { data: currentUser } = useCurrentUser();
+
+    const otherMembers = (members ?? []).filter(
+        (m) => !currentUser?._id || m.user._id !== currentUser._id
+    );
+
+    const [dmOpen, setDmOpen] = useCreateDmModal();
 
 
 
@@ -85,7 +113,7 @@ export const WorkSpaceSidebar = () => {
       <>
       <CreateChannelModal />
 
-	  <div className="relative flex flex-col bg-sidebar h-full border-r border-purple-500/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-purple-500/50 before:opacity-100 before:animate-pulse before:[animation-duration:1.6s]">
+      <div className="relative flex flex-col bg-sidebar h-full border-r border-purple-500/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-purple-500/50 before:opacity-100 before:animate-pulse before:animation-duration-[1.6s]">
           <WorkspaceHeader workspace={workspace} isAdmin={member.role === "admin"} />
           <div className="flex flex-col p-2 mt-3">
               <SideBarItem
@@ -121,21 +149,94 @@ export const WorkSpaceSidebar = () => {
                           icon={HashIcon}
                           id={item._id}
                           variant={channelId === item._id ? "active" : "default"}
+                          actions={
+                              member.role === "admin" ? (
+                                  <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                          <Button
+                                              type="button"
+                                              size="icon-sm"
+                                              variant="ghost"
+                                              aria-label="Channel options"
+                                              className="cursor-pointer hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:border-transparent"
+                                              onClick={(e) => e.stopPropagation()}
+                                              onPointerDown={(e) => e.stopPropagation()}
+                                          >
+                                              <MoreHorizontal className="size-4" />
+                                          </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="min-w-36">
+                                          <DropdownMenuItem
+                                              onSelect={() => {
+                                                  const nextName = window.prompt(
+                                                      "Rename channel",
+                                                      item.name
+                                                  );
+                                                  const name = String(nextName ?? "").trim();
+                                                  if (!name || name === item.name) return;
+
+                                                  void (async () => {
+                                                      try {
+                                                          await renameChannel({
+                                                              id: item._id,
+                                                              name,
+                                                          });
+                                                      } catch (e) {
+                                                          console.error(e);
+                                                          window.alert(
+                                                              e instanceof Error
+                                                                  ? e.message
+                                                                  : "Failed to rename channel"
+                                                          );
+                                                      }
+                                                  })();
+                                              }}
+                                          >
+                                              <Pencil className="mr-2 size-4" />
+                                              Rename
+                                          </DropdownMenuItem>
+
+                                          <DropdownMenuItem
+                                              className="text-destructive focus:text-destructive"
+                                              onSelect={() => {
+                                                  if (!window.confirm(`Delete #${item.name}?`)) return;
+                                                  void (async () => {
+                                                      try {
+                                                          if (channelId === item._id) {
+                                                              router.replace(`/workspaces/${workspaceId}`);
+                                                          }
+                                                          await removeChannel({ id: item._id });
+                                                      } catch (e) {
+                                                          console.error(e);
+                                                          window.alert(
+                                                              e instanceof Error
+                                                                  ? e.message
+                                                                  : "Failed to delete channel"
+                                                          );
+                                                      }
+                                                  })();
+                                              }}
+                                          >
+                                              <Trash2 className="mr-2 size-4" />
+                                              Delete
+                                          </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                  </DropdownMenu>
+                              ) : null
+                          }
                       />
                   ))}
               </WorkSpaceSection>
               <WorkSpaceSection
                   label="Direct Messages"
                   hint="New direct message"
-                  onNew={() => {
-                      console.log("Add member")
-                  }}
+                  onNew={() => setDmOpen(true)}
               >
-              {members?.map((item) => (
+              {otherMembers.map((item) => (
                   <UserItem
                       key={item.user._id}
                       id={item.member._id}
-                      label={item.user.name?.toLowerCase() || "Unnamed"}
+                      label={formatDisplayName(item.user.name)}
                       image={item.user.image}
                   />
               ))}
