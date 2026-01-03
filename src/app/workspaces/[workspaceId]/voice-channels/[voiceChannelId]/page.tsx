@@ -2,26 +2,39 @@
 
 import "@livekit/components-styles";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
-import { AlertTriangleIcon, Loader } from "lucide-react";
+import { AlertTriangleIcon, Loader, PhoneCall } from "lucide-react";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 import { api } from "../../../../../../convex/_generated/api";
 import * as React from "react";
 import {
   LiveKitRoom,
-  AudioConference,
   RoomAudioRenderer,
   ControlBar,
   useRoomContext,
+  useTracks,
+  VideoTrack,
 } from "@livekit/components-react";
-import { ConnectionState, Room, RoomEvent } from "livekit-client";
+import { ConnectionState, Room, RoomEvent, Track } from "livekit-client";
 import { useWorkspaceId } from "@/hooks/use-workspace-id";
 import { useCurrentUser } from "@/features/auth/api/use-current-user";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import {
+  isTrackReference,
+  type TrackReference,
+  type TrackReferenceOrPlaceholder,
+} from "@livekit/components-core";
 
 export default function VoiceChannelPage() {
   const workspaceId = useWorkspaceId();
   const params = useParams();
+  const searchParams = useSearchParams();
+
+  const autoJoin = searchParams.get("join") === "1";
+
   const voiceChannelId = params.voiceChannelId as Id<"voiceChannels">;
 
   const { data: currentUser } = useCurrentUser();
@@ -34,6 +47,7 @@ export default function VoiceChannelPage() {
   const [tokenError, setTokenError] = React.useState<string | null>(null);
   const [shouldConnect, setShouldConnect] = React.useState(false);
   const [joinError, setJoinError] = React.useState<string | null>(null);
+  const [needsAudioGesture, setNeedsAudioGesture] = React.useState(false);
 
   const livekitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
   const safeTokenPart = React.useCallback((value: unknown) => {
@@ -63,6 +77,15 @@ export default function VoiceChannelPage() {
       dynacast: true,
     });
   }, []);
+
+  const [connectionState, setConnectionState] = React.useState(room.state);
+  React.useEffect(() => {
+    const onState = () => setConnectionState(room.state);
+    room.on("connectionStateChanged", onState);
+    return () => {
+      room.off("connectionStateChanged", onState);
+    };
+  }, [room]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -124,8 +147,34 @@ export default function VoiceChannelPage() {
   React.useEffect(() => {
     setShouldConnect(false);
     setJoinError(null);
+    setNeedsAudioGesture(false);
     void room.disconnect();
   }, [room, roomName, token]);
+
+  const autoJoinAttemptedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoJoin) return;
+    if (!livekitUrl) return;
+    if (!token) return;
+    if (autoJoinAttemptedRef.current) return;
+
+    autoJoinAttemptedRef.current = true;
+
+    void (async () => {
+      setJoinError(null);
+      setNeedsAudioGesture(false);
+
+      // Try to satisfy autoplay policies. If blocked, still connect, but show a button.
+      try {
+        await room.startAudio();
+      } catch {
+        setNeedsAudioGesture(true);
+        setJoinError("Audio is blocked by the browser. Click Enable audio.");
+      }
+
+      setShouldConnect(true);
+    })();
+  }, [autoJoin, livekitUrl, token, room]);
 
   if (voiceChannel === undefined) {
     return (
@@ -146,9 +195,34 @@ export default function VoiceChannelPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b px-4 py-3">
-        <h1 className="text-base font-medium">{voiceChannel.name}</h1>
-        <p className="text-xs text-muted-foreground">Voice channel</p>
+      <div className="relative border-b border-purple-500/50 bg-background px-4 py-3 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-0 before:h-px before:bg-purple-500/50 before:opacity-100 before:animate-pulse before:animation-duration-[1.6s]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              className={
+                "inline-block size-2.5 shrink-0 rounded-full " +
+                (connectionState === ConnectionState.Connected
+                  ? "bg-emerald-500"
+                  : "bg-destructive")
+              }
+              aria-label={
+                connectionState === ConnectionState.Connected
+                  ? "Connected"
+                  : "Disconnected"
+              }
+              title={
+                connectionState === ConnectionState.Connected
+                  ? "Connected"
+                  : "Disconnected"
+              }
+            />
+            <span className="text-muted-foreground">
+              <PhoneCall className="size-5 align-middle" />
+            </span>
+            <h1 className="min-w-0 truncate font-semibold text-3xl">{voiceChannel.name}</h1>
+          </div>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">Talk with people in this voice channel.</p>
       </div>
 
       <div className="flex flex-1 flex-col px-4 py-3">
@@ -158,11 +232,7 @@ export default function VoiceChannelPage() {
           </p>
         ) : tokenError ? (
           <p className="text-sm text-destructive">{tokenError}</p>
-        ) : !token ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader className="size-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
+        ) : token ? (
           <LiveKitRoom
             room={room}
             token={token}
@@ -174,78 +244,139 @@ export default function VoiceChannelPage() {
             className="flex flex-1 flex-col"
           >
             <RoomAudioRenderer />
-            <RoomStatus />
             <RoomJoinGate
-              roomName={roomName}
               shouldConnect={shouldConnect}
               setShouldConnect={setShouldConnect}
               joinError={joinError}
               setJoinError={setJoinError}
+              needsAudioGesture={needsAudioGesture}
+              setNeedsAudioGesture={setNeedsAudioGesture}
             />
-            <div className="flex flex-1 flex-col overflow-hidden rounded-md border bg-background">
-              <div className="flex-1 overflow-auto">
-                <AudioConference />
-              </div>
-              <div className="border-t p-2">
-                <ControlBar
-                  controls={{
-                    microphone: true,
-                    camera: false,
-                    chat: false,
-                    screenShare: false,
-                    leave: true,
-                  }}
-                />
-              </div>
+            <div className="flex flex-1 flex-col gap-3 min-h-0">
+              <Card className="flex-1 min-h-0 overflow-hidden">
+                <div className="h-full min-h-0 overflow-auto p-3">
+                  <ParticipantsGrid />
+                </div>
+              </Card>
+
+              <Card className="shrink-0">
+                <div className="p-2">
+                  <ControlBar
+                    controls={{
+                      microphone: true,
+                      camera: true,
+                      chat: false,
+                      screenShare: false,
+                      leave: true,
+                    }}
+                  />
+                </div>
+              </Card>
             </div>
           </LiveKitRoom>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <Loader className="size-5 animate-spin text-muted-foreground" />
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-function RoomStatus() {
-  const room = useRoomContext();
-  const [state, setState] = React.useState(room.state);
+function getInitials(displayName: string) {
+  const parts = displayName
+    .split(/\s+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+}
 
-  React.useEffect(() => {
-    const onState = () => setState(room.state);
-    room.on("connectionStateChanged", onState);
-    return () => {
-      room.off("connectionStateChanged", onState);
-    };
-  }, [room]);
+function ParticipantsGrid() {
+  const tracks = useTracks(
+    [{ source: Track.Source.Camera, withPlaceholder: true }],
+    { onlySubscribed: false }
+  );
 
-  const label =
-    state === ConnectionState.Connected
-      ? "Connected"
-      : state === ConnectionState.Connecting
-        ? "Connecting…"
-        : state === ConnectionState.Reconnecting
-          ? "Reconnecting…"
-          : "Disconnected";
+  const tiles = React.useMemo(() => {
+    return (tracks ?? []).map((trackRef) => {
+      const participant = trackRef.participant;
+      const name = String(participant.name ?? participant.identity ?? "").trim() ||
+        "Unnamed";
+      const initials = getInitials(name);
+      const isRef = isTrackReference(trackRef);
+      const isMuted = isRef ? Boolean(trackRef.publication.isMuted) : true;
+      const showVideo = isRef && !isMuted;
+
+      return {
+        key: `${participant.sid}-${trackRef.source}`,
+        name,
+        initials,
+        showVideo,
+        trackRef: trackRef as TrackReferenceOrPlaceholder,
+        videoRef: isRef ? (trackRef as TrackReference) : null,
+      };
+    });
+  }, [tracks]);
+
+  if (tiles.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-muted-foreground">No participants yet.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-      <span>{label}</span>
-      <span>{room.numParticipants} in room</span>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {tiles.map((t) => (
+        <div
+          key={t.key}
+          className="flex flex-col rounded-lg border border-border bg-card p-3"
+        >
+          <div className="relative w-full overflow-hidden rounded-md bg-muted aspect-video">
+            {t.showVideo ? (
+              <VideoTrack
+                trackRef={t.videoRef ?? undefined}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <Avatar className="size-16">
+                  <AvatarImage alt={t.name} src={undefined} />
+                  <AvatarFallback className="bg-muted text-foreground">
+                    {t.initials}
+                  </AvatarFallback>
+                </Avatar>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 min-w-0">
+            <p className="truncate text-sm font-medium text-foreground">{t.name}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 function RoomJoinGate({
-  roomName,
   shouldConnect,
   setShouldConnect,
   joinError,
   setJoinError,
+  needsAudioGesture,
+  setNeedsAudioGesture,
 }: {
-  roomName: string;
   shouldConnect: boolean;
   setShouldConnect: (v: boolean) => void;
   joinError: string | null;
   setJoinError: (v: string | null) => void;
+  needsAudioGesture: boolean;
+  setNeedsAudioGesture: (v: boolean) => void;
 }) {
   const room = useRoomContext();
   const [state, setState] = React.useState(room.state);
@@ -295,28 +426,47 @@ function RoomJoinGate({
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground truncate">Room: {roomName}</p>
         {joinError ? <p className="text-xs text-destructive">{joinError}</p> : null}
       </div>
 
-      {canJoin ? (
-        <button
-          type="button"
-          className="inline-flex h-8 shrink-0 items-center justify-center rounded-md bg-purple-600 px-3 text-xs font-medium text-white hover:bg-purple-600/90"
-          onClick={async () => {
-            try {
-              setJoinError(null);
-              // Required by Chrome autoplay policies (user gesture).
-              await room.startAudio();
-              setShouldConnect(true);
-            } catch (e) {
-              setJoinError(e instanceof Error ? e.message : "Failed to start audio");
-            }
-          }}
-        >
-          Join voice
-        </button>
-      ) : null}
+      <div className="flex items-center gap-2">
+        {needsAudioGesture ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={async () => {
+              try {
+                setJoinError(null);
+                await room.startAudio();
+                setNeedsAudioGesture(false);
+              } catch (e) {
+                setJoinError(e instanceof Error ? e.message : "Failed to enable audio");
+              }
+            }}
+          >
+            Enable audio
+          </Button>
+        ) : null}
+
+        {canJoin ? (
+          <Button
+            type="button"
+            size="sm"
+            onClick={async () => {
+              try {
+                setJoinError(null);
+                await room.startAudio();
+                setShouldConnect(true);
+              } catch (e) {
+                setJoinError(e instanceof Error ? e.message : "Failed to start audio");
+              }
+            }}
+          >
+            Join voice
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -1,81 +1,67 @@
-import { cva, type VariantProps } from "class-variance-authority";
-import { LucideIcon } from "lucide-react";
-import { IconType } from "react-icons/lib";
-import { cn } from "@/lib/utils";
-import * as React from "react";
+"use client";
+
+import type * as React from "react";
 import Link from "next/link";
 import { useWorkspaceId } from "@/hooks/use-workspace-id";
 
-interface SideBarItemProps {
-    label: string;
-    id: string
-    icon: LucideIcon | IconType
-    href?: string;
-    variant?: VariantProps<typeof sideBarItemVariants>["variant"];
-    actions?: React.ReactNode;
+type SideBarItemProps = {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  id: string;
+  href?: string;
+  onClick?: () => void;
+  variant?: "active" | "default";
+  actions?: React.ReactNode;
+};
 
-}
+export default function SideBarItem({
+  label,
+  icon: Icon,
+  id,
+  href,
+  onClick,
+  variant = "default",
+  actions,
+}: SideBarItemProps) {
+  const workspaceId = useWorkspaceId();
 
+  // Back-compat: when rendering channel items, the sidebar historically omitted `href`
+  // and relied on a default `/workspaces/:id/channel/:channelId` link.
+  // Avoid applying this to short static ids like "threads" or "calls".
+  const resolvedHref =
+    href ?? (!onClick && id.length > 10 ? `/workspaces/${workspaceId}/channel/${id}` : undefined);
 
-const sideBarItemVariants = cva(
-    "flex items-center gap-1.5 justify-start font-normal h-10 px-[18px] text-lg overflow-hidden transition-colors",
-    {
-        variants: {
-            variant: {
-                default: "text-sidebar-foreground/80",
-                active: "text-sidebar-foreground bg-accent/35 hover:bg-accent/45",
-            },
-        },
-        defaultVariants: {
-            variant: "default",
-        },
-    }
-);
+  const className =
+    variant === "active"
+      ? "cursor-pointer rounded-md bg-sidebar-accent px-2 py-1.5 text-sidebar-accent-foreground"
+      : "cursor-pointer rounded-md px-2 py-1.5 text-sidebar-foreground hover:bg-sidebar-accent/60";
 
+  const content = (
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon className="size-4 shrink-0" />
+        <span className="truncate">{label}</span>
+      </div>
+      {actions ? <div className="shrink-0">{actions}</div> : null}
+    </div>
+  );
 
-export const SideBarItem = ({
-    label,
-    id,
-    icon: Icon,
-    href,
-    variant = "default",
-    actions,
-}: SideBarItemProps) => {
-    const workspaceId = useWorkspaceId();
-
+  if (resolvedHref) {
     return (
-        <div className={cn(sideBarItemVariants({ variant }), "w-full group pr-2")}
-        >
-            <Link
-                href={href ?? `/workspaces/${workspaceId}/channel/${id}`}
-                className="flex min-w-0 flex-1 items-center overflow-hidden"
-            >
-                <Icon
-                    className={cn(
-                        "size-5 mr-1 shrink-0 mt-1",
-                        variant === "active"
-                            ? "text-sidebar-foreground"
-                            : "text-sidebar-foreground/80"
-                    )}
-                />
-                <span className="text-sm truncate">{label}</span>
-            </Link>
-
-            {actions ? (
-                <div
-                    className={cn(
-                        "ml-auto shrink-0",
-                        "opacity-0 transition-opacity group-hover:opacity-100",
-                        variant === "active" ? "opacity-100" : null
-                    )}
-                    onClick={(e) => e.stopPropagation()}
-                    onPointerDown={(e) => e.stopPropagation()}
-                >
-                    {actions}
-                </div>
-            ) : null}
-        </div>
+      <Link className={className} href={resolvedHref}>
+        {content}
+      </Link>
     );
-}
+  }
 
-export default SideBarItem;
+  return (
+    <button
+      type="button"
+      className={`${className} w-full text-left`}
+      onClick={onClick}
+      disabled={!onClick}
+    >
+      {content}
+    </button>
+  );
+}

@@ -10,9 +10,11 @@ import { DropdownMenu,
 import { useCurrentUser } from "../api/use-current-user";
 import { LoaderPinwheel, LogOut } from "lucide-react";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useRouter } from "next/navigation";
 
 export const UserButton = () => {
     const signOut = useAuthActions().signOut;
+    const router = useRouter();
     const { data, isLoading} = useCurrentUser();
 
     if (isLoading) {
@@ -42,7 +44,14 @@ export const UserButton = () => {
                 </Avatar>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="center" side="right" className="w-60">
-                <DropdownMenuItem onClick={() => signOut()} className="h-10">
+                <DropdownMenuItem
+                    onClick={async () => {
+                        await signOut();
+                        // Force a full refresh so all auth state + cookies are re-evaluated.
+                        window.location.assign("/auth");
+                    }}
+                    className="h-10"
+                >
                     <LogOut className="size-4 mr-2" />
                         Sign Out
                 </DropdownMenuItem>
