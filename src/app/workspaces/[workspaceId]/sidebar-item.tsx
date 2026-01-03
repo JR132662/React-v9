@@ -10,6 +10,7 @@ interface SideBarItemProps {
     label: string;
     id: string
     icon: LucideIcon | IconType
+    href?: string;
     variant?: VariantProps<typeof sideBarItemVariants>["variant"];
     actions?: React.ReactNode;
 
@@ -36,6 +37,7 @@ export const SideBarItem = ({
     label,
     id,
     icon: Icon,
+    href,
     variant = "default",
     actions,
 }: SideBarItemProps) => {
@@ -45,7 +47,7 @@ export const SideBarItem = ({
         <div className={cn(sideBarItemVariants({ variant }), "w-full group pr-2")}
         >
             <Link
-                href={`/workspaces/${workspaceId}/channel/${id}`}
+                href={href ?? `/workspaces/${workspaceId}/channel/${id}`}
                 className="flex min-w-0 flex-1 items-center overflow-hidden"
             >
                 <Icon

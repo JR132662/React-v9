@@ -10,13 +10,17 @@
 
 import type * as auth from "../auth.js";
 import type * as channels from "../channels.js";
+import type * as curriculum from "../curriculum.js";
+import type * as curriculumComments from "../curriculumComments.js";
 import type * as directMessages from "../directMessages.js";
 import type * as http from "../http.js";
 import type * as members from "../members.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
+import type * as search from "../search.js";
 import type * as userSettings from "../userSettings.js";
 import type * as users from "../users.js";
+import type * as voiceChannels from "../voiceChannels.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -28,13 +32,17 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   channels: typeof channels;
+  curriculum: typeof curriculum;
+  curriculumComments: typeof curriculumComments;
   directMessages: typeof directMessages;
   http: typeof http;
   members: typeof members;
   messages: typeof messages;
   notifications: typeof notifications;
+  search: typeof search;
   userSettings: typeof userSettings;
   users: typeof users;
+  voiceChannels: typeof voiceChannels;
   workspaces: typeof workspaces;
 }>;
 

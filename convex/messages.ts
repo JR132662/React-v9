@@ -1,9 +1,13 @@
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
 type Reaction = { emoji: string; userId: any };
+
+const stripHtmlToText = (input: string) =>
+  input.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
 function summarizeReactions(reactions: Reaction[], currentUserId: any) {
   const byEmoji = new Map<
@@ -136,7 +140,9 @@ export const listByChannel = query({
 
     const messages = await ctx.db
       .query("messages")
-      .withIndex("by_channel_id", (q: any) => q.eq("channelId", args.channelId))
+      .withIndex("by_channel_parent_createdAt", (q: any) =>
+        q.eq("channelId", args.channelId).eq("parentMessageId", undefined)
+      )
       .order("asc")
       .collect();
 
@@ -171,7 +177,9 @@ export const listByChannelPaginated = query({
 
     const page = await ctx.db
       .query("messages")
-      .withIndex("by_channel_id", (q: any) => q.eq("channelId", args.channelId))
+      .withIndex("by_channel_parent_createdAt", (q: any) =>
+        q.eq("channelId", args.channelId).eq("parentMessageId", undefined)
+      )
       .order("desc")
       .paginate(args.paginationOpts);
 
@@ -206,9 +214,26 @@ export const send = mutation({
     channelId: v.id("channels"),
     body: v.optional(v.string()),
     imageId: v.optional(v.id("_storage")),
+    parentMessageId: v.optional(v.id("messages")),
   },
   handler: async (ctx, args) => {
     const { userId, channel } = await requireChannelMember(ctx, args.channelId);
+
+    let parentMessageId: any = undefined;
+    if (args.parentMessageId) {
+      const parent = await ctx.db.get(args.parentMessageId);
+      if (!parent) {
+        throw new Error("Parent message not found");
+      }
+      if (parent.channelId !== args.channelId) {
+        throw new Error("Parent message does not belong to this channel");
+      }
+      // Prevent nesting threads; keep it single-level.
+      if ((parent as any).parentMessageId) {
+        throw new Error("Cannot reply to a reply");
+      }
+      parentMessageId = parent._id;
+    }
 
     const body = (args.body ?? "").trim();
     if (!body && !args.imageId) {
@@ -221,6 +246,7 @@ export const send = mutation({
       userId,
       body: body || undefined,
       imageId: args.imageId,
+      parentMessageId,
       createdAt: Date.now(),
     });
 
@@ -269,6 +295,178 @@ export const send = mutation({
     }
 
     return { messageId };
+  },
+});
+
+export const getById = query({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const message = await ctx.db.get(args.messageId);
+    if (!message) return null;
+
+    const { channel } = await requireChannelMember(ctx, message.channelId);
+
+    const user = await ctx.db.get(message.userId);
+    const imageUrl = message.imageId ? await ctx.storage.getUrl(message.imageId) : null;
+    const rawReactions = (message.reactions ?? []) as Reaction[];
+
+    return {
+      ...message,
+      imageUrl,
+      reactionSummary: summarizeReactions(rawReactions, userId),
+      user: user
+        ? { _id: user._id, name: user.name ?? null, image: user.image ?? null }
+        : { _id: message.userId, name: null, image: null },
+      channelName: channel.name,
+    };
+  },
+});
+
+export const listReplies = query({
+  args: { parentMessageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const parent = await ctx.db.get(args.parentMessageId);
+    if (!parent) throw new Error("Parent message not found");
+
+    const { channel } = await requireChannelMember(ctx, parent.channelId);
+
+    const replies = await ctx.db
+      .query("messages")
+      .withIndex("by_parent_message_id", (q: any) =>
+        q.eq("parentMessageId", args.parentMessageId)
+      )
+      .order("asc")
+      .collect();
+
+    const results: any[] = [];
+    for (const message of replies) {
+      const user = await ctx.db.get(message.userId);
+      const imageUrl = message.imageId ? await ctx.storage.getUrl(message.imageId) : null;
+      const rawReactions = (message.reactions ?? []) as Reaction[];
+
+      results.push({
+        ...message,
+        imageUrl,
+        reactionSummary: summarizeReactions(rawReactions, userId),
+        user: user
+          ? { _id: user._id, name: user.name ?? null, image: user.image ?? null }
+          : { _id: message.userId, name: null, image: null },
+        channelName: channel.name,
+      });
+    }
+
+    return results;
+  },
+});
+
+export const listMyThreadsByWorkspace = query({
+  args: { workspaceId: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    const userId = await auth.getUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_workspace_id_user_id", (q: any) =>
+        q.eq("workspaceId", args.workspaceId).eq("userId", userId)
+      )
+      .unique();
+    if (!member) throw new Error("Not authorized");
+
+    // Threads you participated in = any reply you wrote.
+    const myMessages = await ctx.db
+      .query("messages")
+      .withIndex("by_workspace_user_createdAt", (q: any) =>
+        q.eq("workspaceId", args.workspaceId).eq("userId", userId)
+      )
+      .order("desc")
+      .collect();
+
+    const parentIds = new Set<Id<"messages">>();
+    for (const m of myMessages) {
+      if (m.parentMessageId) parentIds.add(m.parentMessageId);
+    }
+
+    // Also include threads where you authored the parent and someone replied.
+    for (const m of myMessages) {
+      if (m.parentMessageId) continue;
+
+      const hasReply = await ctx.db
+        .query("messages")
+        .withIndex("by_parent_message_id", (q: any) => q.eq("parentMessageId", m._id))
+        .take(1);
+      if (hasReply.length > 0) parentIds.add(m._id);
+    }
+
+    const results: any[] = [];
+    for (const parentId of parentIds) {
+      const parent = await ctx.db.get(parentId);
+      if (!parent) continue;
+      if (parent.workspaceId !== args.workspaceId) continue;
+      // Safety: parent should be top-level.
+      if (parent.parentMessageId) continue;
+
+      const channel = await ctx.db.get(parent.channelId);
+      if (!channel) continue;
+
+      const parentUser = await ctx.db.get(parent.userId);
+      const parentImageUrl = parent.imageId ? await ctx.storage.getUrl(parent.imageId) : null;
+
+      const replies = await ctx.db
+        .query("messages")
+        .withIndex("by_parent_message_id", (q: any) => q.eq("parentMessageId", parent._id))
+        .order("asc")
+        .collect();
+
+      const lastReply = replies[replies.length - 1] ?? null;
+      const lastReplyImageUrl = lastReply?.imageId ? await ctx.storage.getUrl(lastReply.imageId) : null;
+      const lastReplyUser = lastReply ? await ctx.db.get(lastReply.userId) : null;
+
+      const rawParentBody = (parent.body ?? "").trim();
+      const parentText = rawParentBody ? stripHtmlToText(rawParentBody) : "";
+      const parentPreview = parentText || (parentImageUrl ? "Sent an image" : "");
+
+      const rawLastBody = (lastReply?.body ?? "").trim();
+      const lastText = rawLastBody ? stripHtmlToText(rawLastBody) : "";
+      const lastPreview = lastText || (lastReplyImageUrl ? "Sent an image" : "");
+
+      results.push({
+        parentMessageId: parent._id,
+        channelId: parent.channelId,
+        channelName: channel.name,
+        parent: {
+          _id: parent._id,
+          createdAt: parent.createdAt,
+          preview: parentPreview,
+          imageUrl: parentImageUrl,
+          user: parentUser
+            ? { _id: parentUser._id, name: parentUser.name ?? null, image: parentUser.image ?? null }
+            : { _id: parent.userId, name: null, image: null },
+        },
+        replyCount: replies.length,
+        lastReplyAt: lastReply?.createdAt ?? parent.createdAt,
+        lastReply: lastReply
+          ? {
+              _id: lastReply._id,
+              createdAt: lastReply.createdAt,
+              preview: lastPreview,
+              imageUrl: lastReplyImageUrl,
+              user: lastReplyUser
+                ? { _id: lastReplyUser._id, name: lastReplyUser.name ?? null, image: lastReplyUser.image ?? null }
+                : { _id: lastReply.userId, name: null, image: null },
+            }
+          : null,
+      });
+    }
+
+    results.sort((a, b) => (b.lastReplyAt ?? 0) - (a.lastReplyAt ?? 0));
+    return results;
   },
 });
 

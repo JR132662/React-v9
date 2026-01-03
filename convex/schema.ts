@@ -41,6 +41,7 @@ const schema = defineSchema({
     userId: v.id("users"),
     body: v.optional(v.string()),
     imageId: v.optional(v.id("_storage")),
+    parentMessageId: v.optional(v.id("messages")),
     reactions: v.optional(
       v.array(
         v.object({
@@ -51,7 +52,12 @@ const schema = defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
-  }).index("by_channel_id", ["channelId"]),
+  })
+    .index("by_channel_id", ["channelId"])
+    .index("by_parent_message_id", ["parentMessageId"])
+    .index("by_channel_parent_createdAt", ["channelId", "parentMessageId", "createdAt"])
+    .index("by_workspace_createdAt", ["workspaceId", "createdAt"])
+    .index("by_workspace_user_createdAt", ["workspaceId", "userId", "createdAt"]),
 
   directConversations: defineTable({
     workspaceId: v.id("workspaces"),
@@ -81,7 +87,9 @@ const schema = defineSchema({
     ),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
-  }).index("by_conversation_id", ["conversationId"]),
+  })
+    .index("by_conversation_id", ["conversationId"])
+    .index("by_workspace_createdAt", ["workspaceId", "createdAt"]),
 
   notifications: defineTable({
     userId: v.id("users"),
@@ -98,6 +106,38 @@ const schema = defineSchema({
   })
     .index("by_user_workspace_createdAt", ["userId", "workspaceId", "createdAt"])
     .index("by_user_workspace_readAt", ["userId", "workspaceId", "readAt"]),
+
+  curriculumPosts: defineTable({
+    workspaceId: v.id("workspaces"),
+    authorUserId: v.id("users"),
+    weekLabel: v.string(),
+    title: v.string(),
+    body: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_workspace_createdAt", ["workspaceId", "createdAt"])
+    .index("by_workspace_weekLabel", ["workspaceId", "weekLabel"])
+    .index("by_workspace_author_createdAt", ["workspaceId", "authorUserId", "createdAt"]),
+
+  curriculumComments: defineTable({
+    workspaceId: v.id("workspaces"),
+    postId: v.id("curriculumPosts"),
+    userId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_post_createdAt", ["postId", "createdAt"])
+    .index("by_workspace_post_createdAt", ["workspaceId", "postId", "createdAt"])
+    .index("by_workspace_user_createdAt", ["workspaceId", "userId", "createdAt"]),
+
+  voiceChannels: defineTable({
+    workspaceId: v.id("workspaces"),
+    name: v.string(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_workspace_id", ["workspaceId"]),
 
   
 

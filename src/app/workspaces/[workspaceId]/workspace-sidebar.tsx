@@ -1,10 +1,11 @@
 "use client";
 
 import { CreateChannelModal } from "@/features/channels/components/create-channel-modal";
+import { CreateVoiceChannelModal } from "@/features/voice-channels/components/create-voice-channel-modal";
 import { UseCurrentMember } from "@/features/members/api/use-current-member";
 import { useGetWorkspace } from "@/features/workspaces/api/use-get-workspace";
 import { useWorkspaceId } from "@/hooks/use-workspace-id";
-import { AlertTriangleIcon, Atom, HashIcon, Loader, Mail, MessageSquare, MessageSquareText, PersonStanding, PhoneCall, SendHorizonal } from "lucide-react";
+import { AlertTriangleIcon, Atom, Book, HashIcon, Loader, Mail, MessageSquare, MessageSquareText, PersonStanding, PhoneCall, SendHorizonal } from "lucide-react";
 import { WorkspaceHeader } from "./workspace-header";
 import SideBarItem from "./sidebar-item";
 import { UseGetChannels } from "@/features/channels/api/use-get-channels";
@@ -16,6 +17,9 @@ import { useGetWorkspaces } from "@/features/workspaces/api/use-get-workspaces";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useChannelId } from "@/hooks/use-channel-id";
+import { useGetVoiceChannels } from "@/features/voice-channels/api/use-get-voice-channels";
+import { useVoiceChannelId } from "@/hooks/use-voice-channel-id";
+import { useCreateVoiceChannelModal } from "@/features/voice-channels/store/use-create-voice-channel-modal";
 import { useCreateDmModal } from "@/features/direct-messages/store/use-create-dm-modal";
 import { useCurrentUser } from "@/features/auth/api/use-current-user";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -30,10 +34,12 @@ import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 export const WorkSpaceSidebar = () => {
   const workspaceId = useWorkspaceId();
   const channelId = useChannelId();
+    const voiceChannelId = useVoiceChannelId();
 
   const router = useRouter();
 
   const [open, setOpen] = useCreateChannelModal();
+    const [voiceOpen, setVoiceOpen] = useCreateVoiceChannelModal();
 
   const { data: member, isLoading: memberLoading } = UseCurrentMember({ workspaceId });
 
@@ -42,6 +48,8 @@ export const WorkSpaceSidebar = () => {
   const { data: workspaces, isLoading: workspacesLoading } = useGetWorkspaces();
 
   const { data: channels, isLoading: channelsLoading } = UseGetChannels({ workspaceId });
+
+    const { data: voiceChannels } = useGetVoiceChannels({ workspaceId });
 
     const removeChannel = useMutation(api.channels.remove);
     const renameChannel = useMutation(api.channels.updateName);
@@ -112,6 +120,7 @@ export const WorkSpaceSidebar = () => {
   return (
       <>
       <CreateChannelModal />
+      <CreateVoiceChannelModal />
 
       <div className="relative flex flex-col bg-sidebar h-full border-r border-purple-500/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-0 before:w-px before:bg-purple-500/50 before:opacity-100 before:animate-pulse before:animation-duration-[1.6s]">
           <WorkspaceHeader workspace={workspace} isAdmin={member.role === "admin"} />
@@ -120,11 +129,13 @@ export const WorkSpaceSidebar = () => {
                   label="Threads"
                   icon={MessageSquareText}
                   id="threads"
+                  href={`/workspaces/${workspaceId}/threads`}
               />
               <SideBarItem
-                  label="Drafts & Sent"
-                  icon={SendHorizonal}
-                  id="drafts-sent"
+                  label="Learn Now"
+                  icon={Book}
+                  id="learn-now"
+                  href={`/workspaces/${workspaceId}/learn-now`}
               />
               <SideBarItem
                   label="Ai Assistant"
@@ -227,6 +238,26 @@ export const WorkSpaceSidebar = () => {
                       />
                   ))}
               </WorkSpaceSection>
+
+              <WorkSpaceSection
+                  label="Voice Channels"
+                  hint="Create a new voice channel"
+                  onNew={() => setVoiceOpen(true)}
+              >
+                  {voiceChannels?.map((item) => (
+                      <SideBarItem
+                          key={item._id}
+                          label={item.name.toLowerCase()}
+                          icon={PhoneCall}
+                          id={item._id}
+                          href={`/workspaces/${workspaceId}/voice-channels/${item._id}`}
+                          variant={
+                              voiceChannelId === item._id ? "active" : "default"
+                          }
+                      />
+                  ))}
+              </WorkSpaceSection>
+
               <WorkSpaceSection
                   label="Direct Messages"
                   hint="New direct message"
